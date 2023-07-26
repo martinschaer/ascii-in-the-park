@@ -27,7 +27,8 @@ Options:
   -i, --img <IMG>    Image file
   -c, --cols <COLS>  Number of columns [default: 80]
   -I, --invert       Invert colors
-  -m, --mode <MODE>  Mode (values, flat) [default: values]
+  -m, --mode <MODE>  Mode (values, pxmatch) [default: values]
+  -p, --palette <PALETTE>  Palette [default: 0]
   -h, --help         Print help
   -V, --version      Print version
 ```
@@ -35,4 +36,4 @@ Options:
 # Modes
 
 - **values**: maps grayscale values to ascii characters
-- **flat**: good for more "flat" images like logos
+- **pxmatch**: tests which characters provides the best match for every tile

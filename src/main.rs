@@ -7,14 +7,14 @@ use std::path::Path;
 #[derive(Debug, Clone)]
 enum Mode {
     Values,
-    Flat,
+    PixelMatch,
 }
 
 impl std::fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             Mode::Values => "values",
-            Mode::Flat => "flat",
+            Mode::PixelMatch => "pxmatch",
         };
         s.fmt(f)
     }
@@ -25,9 +25,26 @@ impl std::str::FromStr for Mode {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "values" => Ok(Mode::Values),
-            "flat" => Ok(Mode::Flat),
+            "pxmatch" => Ok(Mode::PixelMatch),
             _ => Err(format!("Unknown mode: {}", s)),
         }
+    }
+}
+
+// pre-defined palettes
+const PALETTE : [&str; 4] = [
+    " .-=+*#%@",
+    ".,`~|\\/+X#",
+    "⠀⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯⠰⠱⠲⠳⠴⠵⠶⠷⠸⠹⠺⠻⠼⠽⠾⠿⡀⡁⡂⡃⡄⡅⡆⡇⡈⡉⡊⡋⡌⡍⡎⡏⡐⡑⡒⡓⡔⡕⡖⡗⡘⡙⡚⡛⡜⡝⡞⡟⡠⡡⡢⡣⡤⡥⡦⡧⡨⡩⡪⡫⡬⡭⡮⡯⡰⡱⡲⡳⡴⡵⡶⡷⡸⡹⡺⡻⡼⡽⡾⡿⢀⢁⢂⢃⢄⢅⢆⢇⢈⢉⢊⢋⢌⢍⢎⢏⢐⢑⢒⢓⢔⢕⢖⢗⢘⢙⢚⢛⢜⢝⢞⢟⢠⢡⢢⢣⢤⢥⢦⢧⢨⢩⢪⢫⢬⢭⢮⢯⢰⢱⢲⢳⢴⢵⢶⢷⢸⢹⢺⢻⢼⢽⢾⢿⣀⣁⣂⣃⣄⣅⣆⣇⣈⣉⣊⣋⣌⣍⣎⣏⣐⣑⣒⣓⣔⣕⣖⣗⣘⣙⣚⣛⣜⣝⣞⣟⣠⣡⣢⣣⣤⣥⣦⣧⣨⣩⣪⣫⣬⣭⣮⣯⣰⣱⣲⣳⣴⣵⣶⣷⣸⣹⣺⣻⣼⣽⣾⣿",
+    " !@#$%^&*()-=_+`~qwfpgjluy;[]arstdhneio'zxcvbkm,./\\|QWFPGJLUY:{}ARSTDHNEIO\"ZXCVBKM<>?",
+];
+
+fn validate_palette_index(s: &str) -> Result<usize, String> {
+    let index = s.parse::<usize>().map_err(|e| e.to_string())?;
+    if index >= PALETTE.len() {
+        Err(format!("Invalid palette index: {}", index))
+    } else {
+        Ok(index)
     }
 }
 
@@ -47,12 +64,22 @@ struct Args {
     #[arg(short = 'I', long)]
     invert: bool,
 
-    /// Mode (values, flat)
+    /// Mode (values, pxmatch)
     #[arg(short, long, default_value_t = Mode::Values)]
     mode: Mode,
+
+    /// Palette
+    #[arg(short, long, default_value = "0", value_parser = validate_palette_index)]
+    palette: usize,
 }
 
-fn paint_values(img: &image::DynamicImage, cols: u32, line_height: f32, invert: bool) -> Vec<char> {
+fn paint_values(
+    img: &image::DynamicImage,
+    cols: u32,
+    line_height: f32,
+    invert: bool,
+    palette: &str,
+) -> Vec<char> {
     let ar = img.width() as f32 / img.height() as f32;
     let rows = (cols as f32 / (ar * line_height)) as u32;
     let char_matrix = img
@@ -62,23 +89,23 @@ fn paint_values(img: &image::DynamicImage, cols: u32, line_height: f32, invert: 
         .map(|p| {
             let mut v = p.0[0];
             v = if invert { 255 - v } else { v };
-            match v {
-                0..=31 => ' ',
-                32..=63 => '.',
-                64..=95 => '-',
-                96..=127 => '=',
-                128..=159 => '+',
-                160..=191 => '*',
-                192..=223 => '#',
-                224..=255 => '@',
-            }
+            palette
+                .chars()
+                .nth((palette.len() as f32 * (v as f32 / 256.0)) as usize)
+                .unwrap()
         })
         .collect::<Vec<char>>();
 
     char_matrix
 }
 
-fn paint_flat(img: &image::DynamicImage, cols: u32, line_height: f32, invert: bool) -> Vec<char> {
+fn paint_flat(
+    img: &image::DynamicImage,
+    cols: u32,
+    line_height: f32,
+    invert: bool,
+    palette: &str,
+) -> Vec<char> {
     let tile_w = 10;
     let tile_h = tile_w * line_height as u32;
     let w = cols * tile_w;
@@ -94,8 +121,7 @@ fn paint_flat(img: &image::DynamicImage, cols: u32, line_height: f32, invert: bo
         img.invert()
     }
 
-    let str = "⠀⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯⠰⠱⠲⠳⠴⠵⠶⠷⠸⠹⠺⠻⠼⠽⠾⠿⡀⡁⡂⡃⡄⡅⡆⡇⡈⡉⡊⡋⡌⡍⡎⡏⡐⡑⡒⡓⡔⡕⡖⡗⡘⡙⡚⡛⡜⡝⡞⡟⡠⡡⡢⡣⡤⡥⡦⡧⡨⡩⡪⡫⡬⡭⡮⡯⡰⡱⡲⡳⡴⡵⡶⡷⡸⡹⡺⡻⡼⡽⡾⡿⢀⢁⢂⢃⢄⢅⢆⢇⢈⢉⢊⢋⢌⢍⢎⢏⢐⢑⢒⢓⢔⢕⢖⢗⢘⢙⢚⢛⢜⢝⢞⢟⢠⢡⢢⢣⢤⢥⢦⢧⢨⢩⢪⢫⢬⢭⢮⢯⢰⢱⢲⢳⢴⢵⢶⢷⢸⢹⢺⢻⢼⢽⢾⢿⣀⣁⣂⣃⣄⣅⣆⣇⣈⣉⣊⣋⣌⣍⣎⣏⣐⣑⣒⣓⣔⣕⣖⣗⣘⣙⣚⣛⣜⣝⣞⣟⣠⣡⣢⣣⣤⣥⣦⣧⣨⣩⣪⣫⣬⣭⣮⣯⣰⣱⣲⣳⣴⣵⣶⣷⣸⣹⣺⣻⣼⣽⣾⣿";
-    let chars = str.chars().collect::<Vec<char>>();
+    let chars = palette.chars().collect::<Vec<char>>();
     let mut char_matrix = vec!['*'; (cols * rows) as usize];
     let scale = Scale {
         x: tile_w as f32,
@@ -165,12 +191,26 @@ fn main() {
 
     println!("dimensions {:?}", img.dimensions());
     println!("color {:?}", img.color());
+    println!("palette {:?}: {}", args.palette, PALETTE[args.palette]);
 
     let char_matrix = match args.mode {
-        Mode::Values => paint_values(&img, args.cols, line_height, args.invert),
-        Mode::Flat => paint_flat(&img, args.cols, line_height, args.invert),
+        Mode::Values => paint_values(
+            &img,
+            args.cols,
+            line_height,
+            args.invert,
+            PALETTE[args.palette],
+        ),
+        Mode::PixelMatch => paint_flat(
+            &img,
+            args.cols,
+            line_height,
+            args.invert,
+            PALETTE[args.palette],
+        ),
     };
 
+    println!("---");
     for (i, c) in char_matrix.iter().enumerate() {
         print!("{}", c);
         if (i + 1) % args.cols as usize == 0 {
