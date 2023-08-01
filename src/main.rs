@@ -1,8 +1,15 @@
 use clap::Parser;
-use image::{GenericImageView, GrayImage, Luma, ImageBuffer};
+use image::{GenericImageView, GrayImage, ImageBuffer, Luma};
 use imageproc::{drawing::draw_text_mut, template_matching::match_template};
 use rusttype::{Font, Scale};
-use std::path::Path;
+use std::collections::HashMap;
+use std::fs;
+use std::time::Instant;
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    path::Path,
+};
 
 #[derive(Debug, Clone)]
 enum Mode {
@@ -103,7 +110,10 @@ fn generate_char_imgs(
     chars: &Vec<char>,
     tile_w: u32,
     tile_h: u32,
+    char_img_cache: &mut HashMap<char, ImageBuffer<Luma<u8>, Vec<u8>>>,
 ) -> Vec<ImageBuffer<Luma<u8>, Vec<u8>>> {
+    let start = Instant::now();
+
     let scale = Scale {
         x: tile_w as f32,
         y: tile_h as f32,
@@ -117,14 +127,36 @@ fn generate_char_imgs(
         .iter()
         .enumerate()
         .map(|(_, c)| {
+            // check memory cache
+            if let Some(img) = char_img_cache.get(c) {
+                return img.clone();
+            }
+
+            // check disk cache
+            let mut hasher = DefaultHasher::new();
+            c.hash(&mut hasher);
+            tile_w.hash(&mut hasher);
+            tile_h.hash(&mut hasher);
+            let hash = hasher.finish();
+            let cache_file = format!("cache/{}.png", hash);
+
+            if Path::new(&cache_file).exists() {
+                return image::open(cache_file).unwrap().to_luma8();
+            }
+
             let mut char_img = GrayImage::new(tile_w, tile_h);
             char_img.fill(255);
             draw_text_mut(&mut char_img, Luma([0]), 0, 0, scale, &font, &c.to_string());
-            // TODO: use cli option to enable this
-            // char_img.save(&format!("out/{}.png", i)).unwrap();
+
+            char_img.save(&cache_file).unwrap();
+            char_img_cache.insert(*c, char_img.clone());
+
             char_img
         })
         .collect::<Vec<GrayImage>>();
+
+    let duration = start.elapsed();
+    println!("generate_char_imgs() took: {:?}", duration);
 
     char_imgs
 }
@@ -135,6 +167,7 @@ fn paint_flat(
     line_height: f32,
     invert: bool,
     palette: &str,
+    char_img_cache: &mut HashMap<char, ImageBuffer<Luma<u8>, Vec<u8>>>,
 ) -> Vec<char> {
     let tile_w = 10;
     let tile_h = tile_w * line_height as u32;
@@ -153,7 +186,7 @@ fn paint_flat(
 
     let chars = palette.chars().collect::<Vec<char>>();
     let mut char_matrix = vec!['*'; (cols * rows) as usize];
-    let char_imgs = generate_char_imgs(&chars, tile_w, tile_h);
+    let char_imgs = generate_char_imgs(&chars, tile_w, tile_h, char_img_cache);
 
     for i in 0..(cols * rows) {
         let tile = img
@@ -199,6 +232,14 @@ fn main() {
     let img = image::open(&Path::new(&args.img)).unwrap();
     let line_height = 2.0;
 
+    // memory cache will be usefull to process batches of images or video stream
+    let mut char_img_cache: HashMap<char, ImageBuffer<Luma<u8>, Vec<u8>>> = HashMap::new();
+
+    // check if /cache dir exists, if not create it
+    if !Path::new("cache").exists() {
+        fs::create_dir("cache").unwrap();
+    }
+
     println!("dimensions {:?}", img.dimensions());
     println!("color {:?}", img.color());
     println!("palette {:?}: {}", args.palette, PALETTE[args.palette]);
@@ -217,6 +258,7 @@ fn main() {
             line_height,
             args.invert,
             PALETTE[args.palette],
+            &mut char_img_cache,
         ),
     };
 
