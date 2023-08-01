@@ -1,5 +1,5 @@
 use clap::Parser;
-use image::{GenericImageView, GrayImage, Luma};
+use image::{GenericImageView, GrayImage, Luma, ImageBuffer};
 use imageproc::{drawing::draw_text_mut, template_matching::match_template};
 use rusttype::{Font, Scale};
 use std::path::Path;
@@ -99,6 +99,36 @@ fn paint_values(
     char_matrix
 }
 
+fn generate_char_imgs(
+    chars: &Vec<char>,
+    tile_w: u32,
+    tile_h: u32,
+) -> Vec<ImageBuffer<Luma<u8>, Vec<u8>>> {
+    let scale = Scale {
+        x: tile_w as f32,
+        y: tile_h as f32,
+    };
+    let font = Vec::from(
+        include_bytes!("../fonts/Caskaydia Cove Nerd Font Complete Regular.otf") as &[u8],
+    );
+    let font = Font::try_from_vec(font).unwrap();
+
+    let char_imgs = chars
+        .iter()
+        .enumerate()
+        .map(|(_, c)| {
+            let mut char_img = GrayImage::new(tile_w, tile_h);
+            char_img.fill(255);
+            draw_text_mut(&mut char_img, Luma([0]), 0, 0, scale, &font, &c.to_string());
+            // TODO: use cli option to enable this
+            // char_img.save(&format!("out/{}.png", i)).unwrap();
+            char_img
+        })
+        .collect::<Vec<GrayImage>>();
+
+    char_imgs
+}
+
 fn paint_flat(
     img: &image::DynamicImage,
     cols: u32,
@@ -123,27 +153,7 @@ fn paint_flat(
 
     let chars = palette.chars().collect::<Vec<char>>();
     let mut char_matrix = vec!['*'; (cols * rows) as usize];
-    let scale = Scale {
-        x: tile_w as f32,
-        y: tile_h as f32,
-    };
-    let font = Vec::from(
-        include_bytes!("../fonts/Caskaydia Cove Nerd Font Complete Regular.otf") as &[u8],
-    );
-    let font = Font::try_from_vec(font).unwrap();
-
-    let char_imgs = chars
-        .iter()
-        .enumerate()
-        .map(|(_, c)| {
-            let mut char_img = GrayImage::new(tile_w, tile_h);
-            char_img.fill(255);
-            draw_text_mut(&mut char_img, Luma([0]), 0, 0, scale, &font, &c.to_string());
-            // TODO: use cli option to enable this
-            // char_img.save(&format!("out/{}.png", i)).unwrap();
-            char_img
-        })
-        .collect::<Vec<GrayImage>>();
+    let char_imgs = generate_char_imgs(&chars, tile_w, tile_h);
 
     for i in 0..(cols * rows) {
         let tile = img
