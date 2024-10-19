@@ -1,9 +1,18 @@
 use clap::Parser;
+use crossterm::event::{Event, KeyEvent};
 use image::{GenericImageView, GrayImage, ImageBuffer, Luma};
 use imageproc::{drawing::draw_text_mut, template_matching::match_template};
+use ratatui::{
+    crossterm::event::{self, KeyCode, KeyEventKind},
+    style::Stylize,
+    symbols::border,
+    widgets::{block::Title, Block, Paragraph},
+    DefaultTerminal, Frame,
+};
 use rusttype::{Font, Scale};
 use std::collections::HashMap;
 use std::fs;
+use std::io;
 use std::time::Instant;
 use std::{
     collections::hash_map::DefaultHasher,
@@ -227,23 +236,61 @@ fn paint_flat(
     char_matrix
 }
 
-fn main() {
-    let args = Args::parse();
-    let img = image::open(&Path::new(&args.img)).unwrap();
-    let line_height = 2.0;
+#[derive(Debug, Default)]
+struct App {
+    result: String,
+    exit: bool,
+}
 
-    // memory cache will be usefull to process batches of images or video stream
-    let mut char_img_cache: HashMap<char, ImageBuffer<Luma<u8>, Vec<u8>>> = HashMap::new();
-
-    // check if /cache dir exists, if not create it
-    if !Path::new("cache").exists() {
-        fs::create_dir("cache").unwrap();
+impl App {
+    fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        while !self.exit {
+            terminal.draw(|frame| self.draw(frame))?;
+            self.handle_events()?;
+        }
+        Ok(())
     }
 
-    println!("dimensions {:?}", img.dimensions());
-    println!("color {:?}", img.color());
-    println!("palette {:?}: {}", args.palette, PALETTE[args.palette]);
+    fn draw(&self, frame: &mut Frame) {
+        let block = Block::bordered()
+            .title(Title::from("Canvas"))
+            .border_set(border::ROUNDED);
+        let greeting = Paragraph::new(self.result.clone())
+            .white()
+            .on_black()
+            .block(block);
+        frame.render_widget(greeting, frame.area());
+    }
 
+    /// updates the application's state based on user input
+    fn handle_events(&mut self) -> io::Result<()> {
+        match event::read()? {
+            // it's important to check that the event is a key press event as
+            // crossterm also emits key release and repeat events on Windows.
+            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                self.handle_key_event(key_event)
+            }
+            _ => {}
+        };
+        Ok(())
+    }
+
+    fn handle_key_event(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Char('q') => self.exit(),
+            _ => {}
+        }
+    }
+
+    fn exit(&mut self) {
+        self.exit = true;
+    }
+}
+
+fn paint(args: Args, img: image::DynamicImage) -> String {
+    let line_height = 2.0;
+    // memory cache will be usefull to process batches of images or video stream
+    let mut char_img_cache: HashMap<char, ImageBuffer<Luma<u8>, Vec<u8>>> = HashMap::new();
     let char_matrix = match args.mode {
         Mode::Values => paint_values(
             &img,
@@ -262,11 +309,38 @@ fn main() {
         ),
     };
 
-    println!("---");
+    let mut result = String::new();
     for (i, c) in char_matrix.iter().enumerate() {
-        print!("{}", c);
+        result.push(c.clone());
         if (i + 1) % args.cols as usize == 0 {
-            println!();
+            result.push('\n');
         }
     }
+    result
+}
+
+fn main() -> io::Result<()> {
+    let args = Args::parse();
+    let img = image::open(&Path::new(&args.img)).unwrap();
+
+    // check if /cache dir exists, if not create it
+    if !Path::new("cache").exists() {
+        fs::create_dir("cache").unwrap();
+    }
+
+    println!("dimensions {:?}", img.dimensions());
+    println!("color {:?}", img.color());
+    println!("palette {:?}: {}", args.palette, PALETTE[args.palette]);
+
+    let result = paint(args, img);
+
+    let mut terminal = ratatui::init();
+    // terminal.clear()?;
+    let app_result = App {
+        result,
+        exit: false,
+    }
+    .run(&mut terminal);
+    ratatui::restore();
+    app_result
 }
