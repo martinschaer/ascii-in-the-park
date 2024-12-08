@@ -46,6 +46,7 @@ const PALETTE : [&str; 4] = [
     " !@#$%^&*()-=_+`~qwfpgjluy;[]arstdhneio'zxcvbkm,./\\|QWFPGJLUY:{}ARSTDHNEIO\"ZXCVBKM<>?",
 ];
 
+#[derive(Clone)]
 pub struct RenderSettings {
     /// Number of columns
     pub cols: u32,
@@ -56,7 +57,7 @@ pub struct RenderSettings {
     /// Mode (values, pxmatch)
     mode: Mode,
 
-    /// Palette
+    /// Palette (1-based index)
     palette: usize,
 
     /// Image offset
@@ -72,7 +73,7 @@ impl RenderSettings {
             cols: 80,
             invert: false,
             mode: Mode::Values,
-            palette: 0,
+            palette: 1,
             offset: (0, 0),
             size: (0, 0),
         }
@@ -85,8 +86,9 @@ impl RenderSettings {
         };
     }
 
+    /// Palette index is 1-based
     pub fn set_palette(&mut self, palette: usize) -> bool {
-        if palette < PALETTE.len() {
+        if palette > 0 && palette <= PALETTE.len() {
             self.palette = palette;
             true
         } else {
@@ -105,7 +107,7 @@ pub fn render(settings: &RenderSettings, img: &DynamicImage) -> String {
             settings.cols,
             line_height,
             settings.invert,
-            PALETTE[settings.palette],
+            PALETTE[settings.palette - 1],
             settings,
         ),
         Mode::PixelMatch => render_by_match::render_by_match(
@@ -113,7 +115,7 @@ pub fn render(settings: &RenderSettings, img: &DynamicImage) -> String {
             settings.cols,
             line_height,
             settings.invert,
-            PALETTE[settings.palette],
+            PALETTE[settings.palette - 1],
             settings,
             &mut char_img_cache,
         ),
@@ -132,13 +134,17 @@ pub fn render(settings: &RenderSettings, img: &DynamicImage) -> String {
 pub fn worker_loop(app_state: &Arc<Mutex<App>>) {
     let mut img_path = None;
     let mut img = None;
-    let mut render_time = 0;
+    let mut render_time = 42;
+    let mut result = String::new();
+    let mut settings;
+    let mut do_render;
     loop {
         {
             let mut app = app_state.lock().unwrap();
             if app.exit {
                 break;
             }
+            do_render = app.do_render;
 
             if img_path != app.img_path {
                 if let Some(path) = &app.img_path {
@@ -152,35 +158,40 @@ pub fn worker_loop(app_state: &Arc<Mutex<App>>) {
                             img = Some(i);
                             app.settings.size = img_info.dimensions;
                             app.img_info = Some(img_info);
-                            app.render = true;
                         }
                         Err(e) => {
                             app.status = format!("Error: {}", e);
                             img = None;
                         }
                     }
+                    do_render = true;
                 }
-                app.render = true;
             }
 
-            if app.render {
-                let start = Instant::now();
-                match &img {
-                    Some(i) => {
-                        app.result = render(&app.settings, &i);
-                    }
-                    None => app.result = "No image".to_string(),
-                }
-                render_time = start.elapsed().as_millis();
-                app.render = false;
-            }
+            settings = app.settings.clone();
+        }
 
+        if do_render {
+            let start = Instant::now();
+            match &img {
+                Some(i) => {
+                    result = render(&settings, &i);
+                }
+                None => result = "No image".to_string(),
+            }
+            render_time = start.elapsed().as_millis();
+        }
+
+        {
+            let mut app = app_state.lock().unwrap();
+            app.result = result.clone();
+            app.do_render = false;
             // TODO: app status should go in the ui thread, so we can draw offset changes while rendering
             // and show a spinner icon while rendering
             app.status = match &app.img_info {
                 Some(img_info) => format!(
-                    "{} / x={} y={} / {}ms",
-                    img_info, app.settings.offset.0, app.settings.offset.1, render_time
+                    "{} / x={} y={} / {}ms / {}",
+                    img_info, app.settings.offset.0, app.settings.offset.1, render_time, do_render
                 ),
                 None => "No image".to_string(),
             };

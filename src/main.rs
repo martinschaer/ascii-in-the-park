@@ -53,7 +53,7 @@ impl Display for ImageInfo {
 struct App {
     img_path: Option<String>,
     img_info: Option<ImageInfo>,
-    render: bool,
+    do_render: bool,
     settings: RenderSettings,
     result: String,
     status: String,
@@ -65,7 +65,7 @@ impl App {
         Self {
             img_path,
             img_info: None,
-            render: false,
+            do_render: false,
             settings: RenderSettings::new(),
             result: String::default(),
             status: String::default(),
@@ -131,36 +131,36 @@ impl App {
             KeyCode::Char('q') => self.exit = true,
             KeyCode::Char('i') => {
                 self.settings.invert = !self.settings.invert;
-                self.render = true;
+                self.do_render = true;
             }
             KeyCode::Char('m') => {
                 self.settings.toggle_mode();
-                self.render = true;
+                self.do_render = true;
             }
             KeyCode::Char(c) => {
                 if let Some(palette) = c.to_digit(10) {
                     if !self.settings.set_palette(palette as usize) {
                         self.status = format!("Invalid palette: {}", palette);
                     } else {
-                        self.render = true;
+                        self.do_render = true;
                     }
                 }
             }
             KeyCode::Left => {
                 self.settings.offset.0 = self.settings.offset.0.saturating_add(1);
-                self.render = true;
+                self.do_render = true;
             }
             KeyCode::Right => {
                 self.settings.offset.0 = self.settings.offset.0.saturating_sub(1);
-                self.render = true;
+                self.do_render = true;
             }
             KeyCode::Up => {
                 self.settings.offset.1 = self.settings.offset.1.saturating_add(1);
-                self.render = true;
+                self.do_render = true;
             }
             KeyCode::Down => {
                 self.settings.offset.1 = self.settings.offset.1.saturating_sub(1);
-                self.render = true;
+                self.do_render = true;
             }
             _ => {}
         }
