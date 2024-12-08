@@ -32,6 +32,7 @@ struct App {
     img_color: image::ColorType,
     settings: PaintSettings,
     result: String,
+    status: String,
     exit: bool,
 }
 
@@ -45,6 +46,7 @@ impl App {
             img_color,
             settings: PaintSettings::new(img_dimensions),
             result: String::default(),
+            status: String::default(),
             exit: false,
         }
     }
@@ -116,6 +118,23 @@ impl App {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Enter => self.result = paint(&self.settings, &self.img),
+            KeyCode::Char('i') => {
+                self.settings.invert = !self.settings.invert;
+                self.result = paint(&self.settings, &self.img);
+            }
+            KeyCode::Char('m') => {
+                self.settings.toggle_mode();
+                self.result = paint(&self.settings, &self.img);
+            }
+            KeyCode::Char(c) => {
+                if let Some(palette) = c.to_digit(10) {
+                    if !self.settings.set_palette(palette as usize) {
+                        self.status = format!("Invalid palette: {}", palette);
+                    } else {
+                        self.result = paint(&self.settings, &self.img);
+                    }
+                }
+            }
             KeyCode::Left => {
                 self.settings.offset.0 = self.settings.offset.0.saturating_add(1);
                 self.result = paint(&self.settings, &self.img);
