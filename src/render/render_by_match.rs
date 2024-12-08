@@ -8,7 +8,7 @@ use image::{GrayImage, ImageBuffer, Luma};
 use imageproc::{drawing::draw_text_mut, template_matching::match_template};
 use rusttype::{Font, Scale};
 
-use super::PaintSettings;
+use super::RenderSettings;
 
 fn generate_char_imgs(
     chars: &Vec<char>,
@@ -71,7 +71,7 @@ pub fn render_by_match(
     line_height: f32,
     invert: bool,
     palette: &str,
-    settings: &PaintSettings,
+    settings: &RenderSettings,
     char_img_cache: &mut HashMap<char, ImageBuffer<Luma<u8>, Vec<u8>>>,
 ) -> Vec<char> {
     let tile_w = 10;

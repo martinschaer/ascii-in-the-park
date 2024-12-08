@@ -1,6 +1,8 @@
 use clap::Parser;
-use crossterm::event::{Event, KeyEvent};
-use image::{DynamicImage, GenericImageView};
+use crossterm::{
+    event::KeyEvent,
+    terminal::{disable_raw_mode, enable_raw_mode},
+};
 use ratatui::{
     crossterm::event::{self, KeyCode, KeyEventKind},
     layout::{self, Constraint, Layout},
@@ -10,10 +12,17 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 
-use render::{paint, PaintSettings};
-use std::fs;
-use std::io;
-use std::path::Path;
+use render::{worker_loop, RenderSettings};
+use std::{
+    fmt::{self, Display, Formatter},
+    path::Path,
+    time::Duration,
+};
+use std::{fs, thread};
+use std::{
+    io,
+    sync::{Arc, Mutex},
+};
 
 mod render;
 
@@ -23,39 +32,50 @@ mod render;
 struct Args {
     /// Image file
     #[arg(short, long)]
-    img: String,
+    img: Option<String>,
+}
+
+struct ImageInfo {
+    dimensions: (u32, u32),
+    color: image::ColorType,
+}
+
+impl Display for ImageInfo {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Dimensions: {}x{} / Color: {:?}",
+            self.dimensions.0, self.dimensions.1, self.color
+        )
+    }
 }
 
 struct App {
-    img: DynamicImage,
-    img_dimensions: (u32, u32),
-    img_color: image::ColorType,
-    settings: PaintSettings,
+    img_path: Option<String>,
+    img_info: Option<ImageInfo>,
+    render: bool,
+    settings: RenderSettings,
     result: String,
     status: String,
     exit: bool,
 }
 
 impl App {
-    fn new(img: DynamicImage) -> Self {
-        let img_dimensions = img.dimensions();
-        let img_color = img.color();
+    fn new(img_path: Option<String>) -> Self {
         Self {
-            img,
-            img_dimensions,
-            img_color,
-            settings: PaintSettings::new(img_dimensions),
+            img_path,
+            img_info: None,
+            render: false,
+            settings: RenderSettings::new(),
             result: String::default(),
             status: String::default(),
             exit: false,
         }
     }
 
-    fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        while !self.exit {
-            terminal.draw(|frame| self.draw(frame))?;
-            self.handle_events()?;
-        }
+    fn tick(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        terminal.draw(|frame| self.draw(frame))?;
+        self.handle_events()?;
         Ok(())
     }
 
@@ -77,16 +97,10 @@ impl App {
                     .border_set(border::ROUNDED),
             );
 
-        let footer = Paragraph::new(format!(
-            "Image: {}x{} {:?}",
-            self.img_dimensions.0, self.img_dimensions.1, self.img_color
-        ))
-        .white()
-        .on_black();
+        let footer = Paragraph::new(self.status.clone()).white().on_black();
 
         frame.render_widget(
             Block::new()
-                // .borders(Borders::TOP)
                 .title("Ascii in the park")
                 .title_alignment(layout::Alignment::Center),
             title_area,
@@ -101,62 +115,55 @@ impl App {
         frame.render_widget(footer, footer_area);
     }
 
-    /// updates the application's state based on user input
     fn handle_events(&mut self) -> io::Result<()> {
-        match event::read()? {
-            // it's important to check that the event is a key press event as
-            // crossterm also emits key release and repeat events on Windows.
-            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event)
+        if event::poll(Duration::from_millis(16))? {
+            if let event::Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    self.handle_key_event(key);
+                }
             }
-            _ => {}
-        };
+        }
         Ok(())
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.code {
-            KeyCode::Char('q') => self.exit(),
-            KeyCode::Enter => self.result = paint(&self.settings, &self.img),
+            KeyCode::Char('q') => self.exit = true,
             KeyCode::Char('i') => {
                 self.settings.invert = !self.settings.invert;
-                self.result = paint(&self.settings, &self.img);
+                self.render = true;
             }
             KeyCode::Char('m') => {
                 self.settings.toggle_mode();
-                self.result = paint(&self.settings, &self.img);
+                self.render = true;
             }
             KeyCode::Char(c) => {
                 if let Some(palette) = c.to_digit(10) {
                     if !self.settings.set_palette(palette as usize) {
                         self.status = format!("Invalid palette: {}", palette);
                     } else {
-                        self.result = paint(&self.settings, &self.img);
+                        self.render = true;
                     }
                 }
             }
             KeyCode::Left => {
                 self.settings.offset.0 = self.settings.offset.0.saturating_add(1);
-                self.result = paint(&self.settings, &self.img);
+                self.render = true;
             }
             KeyCode::Right => {
                 self.settings.offset.0 = self.settings.offset.0.saturating_sub(1);
-                self.result = paint(&self.settings, &self.img);
+                self.render = true;
             }
             KeyCode::Up => {
                 self.settings.offset.1 = self.settings.offset.1.saturating_add(1);
-                self.result = paint(&self.settings, &self.img);
+                self.render = true;
             }
             KeyCode::Down => {
                 self.settings.offset.1 = self.settings.offset.1.saturating_sub(1);
-                self.result = paint(&self.settings, &self.img);
+                self.render = true;
             }
             _ => {}
         }
-    }
-
-    fn exit(&mut self) {
-        self.exit = true;
     }
 }
 
@@ -168,11 +175,46 @@ fn main() -> io::Result<()> {
         fs::create_dir("cache").unwrap();
     }
 
+    enable_raw_mode()?;
     let mut terminal = ratatui::init();
     // terminal.clear()?;
 
-    let img = image::open(&Path::new(&args.img)).unwrap();
-    let app_result = App::new(img).run(&mut terminal);
+    let app = App::new(args.img);
+    let app_state = Arc::new(Mutex::new(app));
+    let app_state_clone = Arc::clone(&app_state);
+
+    // ascii render loop
+    let worker_thread = thread::spawn(move || {
+        worker_loop(&app_state);
+    });
+
+    // ui loop
+    let ui_thread = thread::spawn(move || {
+        loop {
+            {
+                let mut app = app_state_clone.lock().unwrap();
+                if app.exit {
+                    break;
+                }
+                app.tick(&mut terminal)?;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(16));
+        }
+        Ok(())
+    });
+
+    // join
+    let ui_result = ui_thread
+        .join()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("UI thread error: {:?}", e)))?;
+    let _worker_result = worker_thread.join().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Worker thread error: {:?}", e),
+        )
+    })?;
+
+    disable_raw_mode()?;
     ratatui::restore();
-    app_result
+    ui_result
 }

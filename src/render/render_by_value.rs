@@ -1,4 +1,4 @@
-use super::PaintSettings;
+use super::RenderSettings;
 
 pub fn render_by_value(
     img: &image::DynamicImage,
@@ -6,7 +6,7 @@ pub fn render_by_value(
     line_height: f32,
     invert: bool,
     palette: &str,
-    settings: &PaintSettings,
+    settings: &RenderSettings,
 ) -> Vec<char> {
     let cropped_size = (
         settings.size.0 - settings.offset.0,

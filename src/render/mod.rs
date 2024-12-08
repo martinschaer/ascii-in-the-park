@@ -1,5 +1,12 @@
-use image::{DynamicImage, ImageBuffer, Luma};
-use std::collections::HashMap;
+use image::{DynamicImage, GenericImageView, ImageBuffer, Luma};
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
+
+use crate::{App, ImageInfo};
 
 mod render_by_match;
 mod render_by_value;
@@ -39,7 +46,7 @@ const PALETTE : [&str; 4] = [
     " !@#$%^&*()-=_+`~qwfpgjluy;[]arstdhneio'zxcvbkm,./\\|QWFPGJLUY:{}ARSTDHNEIO\"ZXCVBKM<>?",
 ];
 
-pub struct PaintSettings {
+pub struct RenderSettings {
     /// Number of columns
     pub cols: u32,
 
@@ -59,15 +66,15 @@ pub struct PaintSettings {
     pub size: (u32, u32),
 }
 
-impl PaintSettings {
-    pub fn new(size: (u32, u32)) -> Self {
+impl RenderSettings {
+    pub fn new() -> Self {
         Self {
             cols: 80,
             invert: false,
             mode: Mode::Values,
             palette: 0,
             offset: (0, 0),
-            size,
+            size: (0, 0),
         }
     }
 
@@ -88,7 +95,7 @@ impl PaintSettings {
     }
 }
 
-pub fn paint(settings: &PaintSettings, img: &DynamicImage) -> String {
+pub fn render(settings: &RenderSettings, img: &DynamicImage) -> String {
     let line_height = 2.0;
     // memory cache will be usefull to process batches of images or video stream
     let mut char_img_cache: HashMap<char, ImageBuffer<Luma<u8>, Vec<u8>>> = HashMap::new();
@@ -120,4 +127,68 @@ pub fn paint(settings: &PaintSettings, img: &DynamicImage) -> String {
         }
     }
     result
+}
+
+pub fn worker_loop(app_state: &Arc<Mutex<App>>) {
+    let start = Instant::now();
+    let mut img_path = None;
+    let mut img = None;
+    loop {
+        {
+            let mut app = app_state.lock().unwrap();
+            if app.exit {
+                break;
+            }
+
+            if img_path != app.img_path {
+                if let Some(path) = &app.img_path {
+                    img_path = Some(path.clone());
+                    match image::open(&Path::new(&path)) {
+                        Ok(i) => {
+                            let img_info = ImageInfo {
+                                dimensions: i.dimensions(),
+                                color: i.color(),
+                            };
+                            img = Some(i);
+                            app.settings.size = img_info.dimensions;
+                            app.status = format!(
+                                "{} / x={} y={} / {}",
+                                &img_info,
+                                app.settings.offset.0,
+                                app.settings.offset.1,
+                                start.elapsed().as_secs()
+                            );
+                            app.img_info = Some(img_info);
+                            app.render = true;
+                        }
+                        Err(e) => {
+                            app.status = format!("Error: {}", e);
+                            img = None;
+                        }
+                    }
+                }
+                app.render = true;
+            }
+
+            if app.render {
+                match &img {
+                    Some(i) => {
+                        app.result = render(&app.settings, &i);
+                    }
+                    None => app.result = "No image".to_string(),
+                }
+                app.render = false;
+            }
+
+            app.status = format!(
+                "{} / x={} y={} / {}",
+                app.render,
+                app.settings.offset.0,
+                app.settings.offset.1,
+                start.elapsed().as_secs()
+            );
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(16));
+    }
 }
