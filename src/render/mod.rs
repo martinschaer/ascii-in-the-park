@@ -42,7 +42,7 @@ impl std::str::FromStr for Mode {
 const PALETTE : [&str; 4] = [
     " .-=+*#%@",
     ".,`~|\\/+X#",
-    "⠀⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯⠰⠱⠲⠳⠴⠵⠶⠷⠸⠹⠺⠻⠼⠽⠾⠿⡀⡁⡂⡃⡄⡅⡆⡇⡈⡉⡊⡋⡌⡍⡎⡏⡐⡑⡒⡓⡔⡕⡖⡗⡘⡙⡚⡛⡜⡝⡞⡟⡠⡡⡢⡣⡤⡥⡦⡧⡨⡩⡪⡫⡬⡭⡮⡯⡰⡱⡲⡳⡴⡵⡶⡷⡸⡹⡺⡻⡼⡽⡾⡿⢀⢁⢂⢃⢄⢅⢆⢇⢈⢉⢊⢋⢌⢍⢎⢏⢐⢑⢒⢓⢔⢕⢖⢗⢘⢙⢚⢛⢜⢝⢞⢟⢠⢡⢢⢣⢤⢥⢦⢧⢨⢩⢪⢫⢬⢭⢮⢯⢰⢱⢲⢳⢴⢵⢶⢷⢸⢹⢺⢻⢼⢽⢾⢿⣀⣁⣂⣃⣄⣅⣆⣇⣈⣉⣊⣋⣌⣍⣎⣏⣐⣑⣒⣓⣔⣕⣖⣗⣘⣙⣚⣛⣜⣝⣞⣟⣠⣡⣢⣣⣤⣥⣦⣧⣨⣩⣪⣫⣬⣭⣮⣯⣰⣱⣲⣳⣴⣵⣶⣷⣸⣹⣺⣻⣼⣽⣾⣿",
+    " ⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯⠰⠱⠲⠳⠴⠵⠶⠷⠸⠹⠺⠻⠼⠽⠾⠿⡀⡁⡂⡃⡄⡅⡆⡇⡈⡉⡊⡋⡌⡍⡎⡏⡐⡑⡒⡓⡔⡕⡖⡗⡘⡙⡚⡛⡜⡝⡞⡟⡠⡡⡢⡣⡤⡥⡦⡧⡨⡩⡪⡫⡬⡭⡮⡯⡰⡱⡲⡳⡴⡵⡶⡷⡸⡹⡺⡻⡼⡽⡾⡿⢀⢁⢂⢃⢄⢅⢆⢇⢈⢉⢊⢋⢌⢍⢎⢏⢐⢑⢒⢓⢔⢕⢖⢗⢘⢙⢚⢛⢜⢝⢞⢟⢠⢡⢢⢣⢤⢥⢦⢧⢨⢩⢪⢫⢬⢭⢮⢯⢰⢱⢲⢳⢴⢵⢶⢷⢸⢹⢺⢻⢼⢽⢾⢿⣀⣁⣂⣃⣄⣅⣆⣇⣈⣉⣊⣋⣌⣍⣎⣏⣐⣑⣒⣓⣔⣕⣖⣗⣘⣙⣚⣛⣜⣝⣞⣟⣠⣡⣢⣣⣤⣥⣦⣧⣨⣩⣪⣫⣬⣭⣮⣯⣰⣱⣲⣳⣴⣵⣶⣷⣸⣹⣺⣻⣼⣽⣾⣿",
     " !@#$%^&*()-=_+`~qwfpgjluy;[]arstdhneio'zxcvbkm,./\\|QWFPGJLUY:{}ARSTDHNEIO\"ZXCVBKM<>?",
 ];
 
@@ -130,9 +130,9 @@ pub fn render(settings: &RenderSettings, img: &DynamicImage) -> String {
 }
 
 pub fn worker_loop(app_state: &Arc<Mutex<App>>) {
-    let start = Instant::now();
     let mut img_path = None;
     let mut img = None;
+    let mut render_time = 0;
     loop {
         {
             let mut app = app_state.lock().unwrap();
@@ -151,13 +151,6 @@ pub fn worker_loop(app_state: &Arc<Mutex<App>>) {
                             };
                             img = Some(i);
                             app.settings.size = img_info.dimensions;
-                            app.status = format!(
-                                "{} / x={} y={} / {}",
-                                &img_info,
-                                app.settings.offset.0,
-                                app.settings.offset.1,
-                                start.elapsed().as_secs()
-                            );
                             app.img_info = Some(img_info);
                             app.render = true;
                         }
@@ -171,22 +164,26 @@ pub fn worker_loop(app_state: &Arc<Mutex<App>>) {
             }
 
             if app.render {
+                let start = Instant::now();
                 match &img {
                     Some(i) => {
                         app.result = render(&app.settings, &i);
                     }
                     None => app.result = "No image".to_string(),
                 }
+                render_time = start.elapsed().as_millis();
                 app.render = false;
             }
 
-            app.status = format!(
-                "{} / x={} y={} / {}",
-                app.render,
-                app.settings.offset.0,
-                app.settings.offset.1,
-                start.elapsed().as_secs()
-            );
+            // TODO: app status should go in the ui thread, so we can draw offset changes while rendering
+            // and show a spinner icon while rendering
+            app.status = match &app.img_info {
+                Some(img_info) => format!(
+                    "{} / x={} y={} / {}ms",
+                    img_info, app.settings.offset.0, app.settings.offset.1, render_time
+                ),
+                None => "No image".to_string(),
+            };
         }
 
         std::thread::sleep(std::time::Duration::from_millis(16));

@@ -29,8 +29,8 @@ pub fn render_by_value(
             v = if invert { 255 - v } else { v };
             palette
                 .chars()
-                .nth((palette.len() as f32 * (v as f32 / 256.0)) as usize)
-                .unwrap()
+                .nth(((palette.len() - 1) as f32 * (v as f32 / 256.0)) as usize)
+                .unwrap_or(palette.chars().nth(0).unwrap())
         })
         .collect::<Vec<char>>();
 
