@@ -22,10 +22,6 @@ fn generate_char_imgs(
         x: tile_w as f32,
         y: tile_h as f32,
     };
-    let font = Vec::from(
-        include_bytes!("../../fonts/Caskaydia Cove Nerd Font Complete Regular.otf") as &[u8],
-    );
-    let font = Font::try_from_vec(font).unwrap();
 
     let char_imgs = chars
         .iter()
@@ -35,6 +31,12 @@ fn generate_char_imgs(
             if let Some(img) = char_img_cache.get(c) {
                 return img.clone();
             }
+
+            // load font
+            let font = Vec::from(include_bytes!(
+                "../../fonts/Caskaydia Cove Nerd Font Complete Regular.otf"
+            ) as &[u8]);
+            let font = Font::try_from_vec(font).unwrap();
 
             // check disk cache
             let mut hasher = DefaultHasher::new();
@@ -78,7 +80,6 @@ pub fn render_by_match(
     let tile_h = tile_w * line_height as u32;
     let w = cols * tile_w;
 
-    // let ar = img.width() as f32 / img.height() as f32;
     let cropped_size = (
         settings.size.0 - settings.offset.0,
         settings.size.1 - settings.offset.1,
@@ -87,8 +88,6 @@ pub fn render_by_match(
 
     let rows = (cols as f32 / (ar * line_height)) as u32;
     let h = (w as f32 / ar) as u32;
-    // println!("cols {}, rows {}", cols, rows);
-    // println!("w: {}, h: {}", w, h);
 
     // TODO: don't make it bigger
     let mut img = img.resize_exact(w, h, image::imageops::FilterType::Nearest);
@@ -110,14 +109,12 @@ pub fn render_by_match(
             )
             .to_luma8();
         if tile.width() != tile_w || tile.height() != tile_h {
-            // println!("tile size mismatch {} {}", tile.width(), tile.height());
             char_matrix[i as usize] = '_';
             continue;
         }
 
         // tests all chars agaist tile
         let mut best = 0;
-        // let mut best_score = 0;
         let mut best_score = u32::MAX;
         for (ci, char_img) in char_imgs.iter().enumerate() {
             let matched = match_template(
@@ -127,7 +124,6 @@ pub fn render_by_match(
                 imageproc::template_matching::MatchTemplateMethod::SumOfSquaredErrors,
             );
             let score = matched.pixels().map(|p| p[0]).sum::<f32>().abs() as u32;
-            // if score > best_score {
             if score < best_score {
                 best = ci;
                 best_score = score;
