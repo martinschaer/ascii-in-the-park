@@ -6,9 +6,10 @@ use crossterm::{
 use ratatui::{
     crossterm::event::{self, KeyCode, KeyEventKind},
     layout::{self, Constraint, Layout},
-    style::Stylize,
+    style::{Style, Stylize},
     symbols::border,
-    widgets::{block::Title, Block, Paragraph},
+    text::Span,
+    widgets::{Block, Borders, Paragraph},
     DefaultTerminal, Frame,
 };
 
@@ -25,6 +26,21 @@ use std::{
 };
 
 mod render;
+
+enum CropMode {
+    TopLeft,
+    WidthHeight,
+}
+
+impl Display for CropMode {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let s = match self {
+            CropMode::TopLeft => "Crop top left",
+            CropMode::WidthHeight => "Crop width height",
+        };
+        s.fmt(f)
+    }
+}
 
 /// CLI interface for a virtual park where AI gathers to do ASCII paintings of your images.
 #[derive(Parser, Debug)]
@@ -58,6 +74,7 @@ struct App {
     result: String,
     status: String,
     exit: bool,
+    crop_mode: CropMode,
 }
 
 impl App {
@@ -70,6 +87,7 @@ impl App {
             result: String::default(),
             status: String::default(),
             exit: false,
+            crop_mode: CropMode::TopLeft,
         }
     }
 
@@ -88,16 +106,11 @@ impl App {
         ]);
         let [title_area, canvas_area, settings_area, footer_area] = vertical.areas(frame.area());
 
-        let canvas = Paragraph::new(self.result.clone())
-            .white()
-            .on_black()
-            .block(
-                Block::bordered()
-                    .title(Title::from("Canvas"))
-                    .border_set(border::ROUNDED),
-            );
+        let canvas =
+            Paragraph::new(self.result.clone()).block(Block::bordered().borders(Borders::TOP));
 
-        let footer = Paragraph::new(self.status.clone()).white().on_black();
+        let footer = Paragraph::new(self.status.clone());
+        let btn_style = Style::default().on_white().black();
 
         frame.render_widget(
             Block::new()
@@ -107,9 +120,11 @@ impl App {
         );
         frame.render_widget(canvas, canvas_area);
         frame.render_widget(
-            Block::bordered()
-                .title("Settings")
-                .border_set(border::ROUNDED),
+            Paragraph::new(Span::styled(format!("{} [c]", self.crop_mode), btn_style)).block(
+                Block::bordered()
+                    .title("Settings")
+                    .border_set(border::ROUNDED),
+            ),
             settings_area,
         );
         frame.render_widget(footer, footer_area);
@@ -129,12 +144,62 @@ impl App {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Char('q') => self.exit = true,
+            KeyCode::Char('c') => {
+                self.crop_mode = match self.crop_mode {
+                    CropMode::TopLeft => CropMode::WidthHeight,
+                    CropMode::WidthHeight => CropMode::TopLeft,
+                };
+            }
             KeyCode::Char('i') => {
                 self.settings.invert = !self.settings.invert;
                 self.do_render = true;
             }
             KeyCode::Char('m') => {
                 self.settings.toggle_mode();
+                self.do_render = true;
+            }
+            KeyCode::Left => {
+                match self.crop_mode {
+                    CropMode::TopLeft => {
+                        self.settings.crop.0 = self.settings.crop.0.saturating_add(1);
+                    }
+                    CropMode::WidthHeight => {
+                        self.settings.crop.2 = self.settings.crop.2.saturating_sub(1);
+                    }
+                }
+                self.do_render = true;
+            }
+            KeyCode::Right => {
+                match self.crop_mode {
+                    CropMode::TopLeft => {
+                        self.settings.crop.0 = self.settings.crop.0.saturating_sub(1);
+                    }
+                    CropMode::WidthHeight => {
+                        self.settings.crop.2 = self.settings.crop.2.saturating_add(1);
+                    }
+                }
+                self.do_render = true;
+            }
+            KeyCode::Up => {
+                match self.crop_mode {
+                    CropMode::TopLeft => {
+                        self.settings.crop.1 = self.settings.crop.1.saturating_add(1);
+                    }
+                    CropMode::WidthHeight => {
+                        self.settings.crop.3 = self.settings.crop.3.saturating_sub(1);
+                    }
+                }
+                self.do_render = true;
+            }
+            KeyCode::Down => {
+                match self.crop_mode {
+                    CropMode::TopLeft => {
+                        self.settings.crop.1 = self.settings.crop.1.saturating_sub(1);
+                    }
+                    CropMode::WidthHeight => {
+                        self.settings.crop.3 = self.settings.crop.3.saturating_add(1);
+                    }
+                }
                 self.do_render = true;
             }
             KeyCode::Char(c) => {
@@ -145,22 +210,6 @@ impl App {
                         self.do_render = true;
                     }
                 }
-            }
-            KeyCode::Left => {
-                self.settings.offset.0 = self.settings.offset.0.saturating_add(1);
-                self.do_render = true;
-            }
-            KeyCode::Right => {
-                self.settings.offset.0 = self.settings.offset.0.saturating_sub(1);
-                self.do_render = true;
-            }
-            KeyCode::Up => {
-                self.settings.offset.1 = self.settings.offset.1.saturating_add(1);
-                self.do_render = true;
-            }
-            KeyCode::Down => {
-                self.settings.offset.1 = self.settings.offset.1.saturating_sub(1);
-                self.do_render = true;
             }
             _ => {}
         }

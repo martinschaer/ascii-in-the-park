@@ -60,10 +60,10 @@ pub struct RenderSettings {
     /// Palette (1-based index)
     palette: usize,
 
-    /// Image offset
-    pub offset: (u32, u32),
+    /// Crop (top left x, top left y, width, height)
+    pub crop: (u32, u32, u32, u32),
 
-    /// Image size
+    /// Original image size
     pub size: (u32, u32),
 }
 
@@ -74,9 +74,14 @@ impl RenderSettings {
             invert: false,
             mode: Mode::Values,
             palette: 1,
-            offset: (0, 0),
+            crop: (0, 0, 0, 0),
             size: (0, 0),
         }
+    }
+
+    pub fn update(&mut self, dimensions: (u32, u32)) {
+        self.size = dimensions;
+        self.crop = (0, 0, dimensions.0, dimensions.1);
     }
 
     pub fn toggle_mode(&mut self) {
@@ -156,7 +161,7 @@ pub fn worker_loop(app_state: &Arc<Mutex<App>>) {
                                 color: i.color(),
                             };
                             img = Some(i);
-                            app.settings.size = img_info.dimensions;
+                            app.settings.update(img_info.dimensions);
                             app.img_info = Some(img_info);
                         }
                         Err(e) => {
@@ -190,8 +195,14 @@ pub fn worker_loop(app_state: &Arc<Mutex<App>>) {
             // and show a spinner icon while rendering
             app.status = match &app.img_info {
                 Some(img_info) => format!(
-                    "{} / x={} y={} / {}ms / {}",
-                    img_info, app.settings.offset.0, app.settings.offset.1, render_time, do_render
+                    "{} / crop x={} y={} w={} h={} / {}ms / {}",
+                    img_info,
+                    app.settings.crop.0,
+                    app.settings.crop.1,
+                    app.settings.crop.2,
+                    app.settings.crop.3,
+                    render_time,
+                    do_render
                 ),
                 None => "No image".to_string(),
             };

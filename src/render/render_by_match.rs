@@ -80,12 +80,7 @@ pub fn render_by_match(
     let tile_h = tile_w * line_height as u32;
     let w = cols * tile_w;
 
-    let cropped_size = (
-        settings.size.0 - settings.offset.0,
-        settings.size.1 - settings.offset.1,
-    );
-    let ar = cropped_size.0 as f32 / cropped_size.1 as f32;
-
+    let ar = settings.crop.2 as f32 / settings.crop.3 as f32;
     let rows = (cols as f32 / (ar * line_height)) as u32;
     let h = (w as f32 / ar) as u32;
 

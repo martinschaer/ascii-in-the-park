@@ -8,18 +8,14 @@ pub fn render_by_value(
     palette: &str,
     settings: &RenderSettings,
 ) -> Vec<char> {
-    let cropped_size = (
-        settings.size.0 - settings.offset.0,
-        settings.size.1 - settings.offset.1,
-    );
-    let ar = cropped_size.0 as f32 / cropped_size.1 as f32;
+    let ar = settings.crop.2 as f32 / settings.crop.3 as f32;
     let rows = (cols as f32 / (ar * line_height)) as u32;
     let char_matrix = img
         .crop_imm(
-            settings.offset.0,
-            settings.offset.1,
-            cropped_size.0,
-            cropped_size.1,
+            settings.crop.0,
+            settings.crop.1,
+            settings.crop.2,
+            settings.crop.3,
         )
         .resize_exact(cols, rows, image::imageops::FilterType::Nearest)
         .to_luma8()
